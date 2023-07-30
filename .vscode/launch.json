@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Build and Run disc filler",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/disc_filler",
+      "args": [
+        "-o",
+        "/tmp"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": true,
+      "MIMode": "lldb",
+      "preLaunchTask": "Build"
+    }
+  ]
+}
