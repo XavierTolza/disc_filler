@@ -1,34 +1,58 @@
 #include "arguments.hpp"
+#include <iostream>
+#include <unistd.h>
+#include <getopt.h>
 
-Arguments parse_arguments(int argc, char* argv[]) {
-    argparse::ArgumentParser program("disc_filler");
+void displayHelp() {
+    std::cout << "Usage: ./your_program [OPTIONS]\n"
+              << "Options:\n"
+              << "  -i, --input <path>   Input file path or folder to read file names from, or \"-\" to read from stdin\n"
+              << "  -s, --size <bytes>   Maximal disk size in bytes (default: 25000000000)\n"
+              << "  -p, --folder-prefix <name>   Name of the created folders (default: \"disk\")\n"
+              << "  -o, --output <path>  Path to the output directory where the folders will be created\n"
+              << "  -h, --help           Display this help text\n";
+}
 
-    program.add_argument("-s", "--size")
-        .help("The maximal disk size in bytes (default: size of a Blu-ray: 25000000000)")
-        .default_value(25000000000)
-        .action([](const std::string& value) { return std::stoull(value); });
+Arguments parseCommandLine(int argc, char* argv[]) {
+    Arguments args;
+    args.size = 25000000000; // Default size of a Blu-ray disc in bytes
+    args.folderPrefix = "disk"; // Default folder prefix
+    args.displayHelp = false;
 
-    program.add_argument("-p", "--folder-prefix")
-        .help("The name of the created folders (default: \"disk\" so the folder will be disk1, disk2, etc)")
-        .default_value("disk");
+    const char* shortOpts = "i:s:p:o:h";
+    const option longOpts[] = {
+        {"input", required_argument, nullptr, 'i'},
+        {"size", required_argument, nullptr, 's'},
+        {"folder-prefix", required_argument, nullptr, 'p'},
+        {"output", required_argument, nullptr, 'o'},
+        {"help", no_argument, nullptr, 'h'},
+        {nullptr, no_argument, nullptr, 0}
+    };
 
-    program.add_argument("-o", "--output")
-        .help("The path to an output directory where the folders will be created")
-        .required();
-
-    try {
-        program.parse_args(argc, argv);
-
-        Arguments args;
-        args.max_disk_size = program.get<std::uintmax_t>("--size");
-        args.folder_prefix = program.get<std::string>("--folder-prefix");
-        args.output_directory = program.get<fs::path>("--output");
-
-        return args;
-
-    } catch (const std::runtime_error& err) {
-        std::cerr << err.what() << std::endl;
-        std::cout << program;
-        exit(1);
+    int opt;
+    while ((opt = getopt_long(argc, argv, shortOpts, longOpts, nullptr)) != -1) {
+        switch (opt) {
+            case 'i':
+                args.input = optarg;
+                break;
+            case 's':
+                args.size = std::stoll(optarg);
+                break;
+            case 'p':
+                args.folderPrefix = optarg;
+                break;
+            case 'o':
+                args.output = optarg;
+                break;
+            case 'h':
+                args.displayHelp = true;
+                break;
+            default:
+                std::cerr << "Invalid option. Use -h for help.\n";
+                args.displayHelp = true;
+                return args;
+        }
     }
+
+    return args;
 }

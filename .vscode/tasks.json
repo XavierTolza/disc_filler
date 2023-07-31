@@ -4,7 +4,7 @@
     {
       "label": "Build",
       "type": "shell",
-      "command": "cmake . -B build && cd build && make -j6 && cd ..",
+      "command": "cmake . -B build -DCMAKE_BUILD_TYPE=Debug && cd build && make -j6 && cd ..",
       "group": {
         "kind": "build",
         "isDefault": true
