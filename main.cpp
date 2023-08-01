@@ -11,6 +11,7 @@ struct file_description_t
 {
     std::uintmax_t size;
     fs::path path;
+    size_t disk_index;
 };
 
 std::vector<fs::path> read_stdin(std::istream &input)
@@ -76,13 +77,14 @@ std::vector<file_description_t> file_size(std::vector<fs::path> &input, fs::path
 
     for (fs::path &i : input)
     {
-        i = rootPath/i;
+        i = rootPath / i;
         if (fs::exists(i) && fs::is_regular_file(i))
         {
             std::uintmax_t size = fs::file_size(i);
-            files.push_back({size, i});
+            files.push_back({size, i, 0});
         }
-        else{
+        else
+        {
             std::cout << "invalid file " << i << std::endl;
         }
     }
@@ -91,52 +93,73 @@ std::vector<file_description_t> file_size(std::vector<fs::path> &input, fs::path
 }
 
 // Function to group files into bags based on the given maximum bag size
-std::vector<std::vector<file_description_t>> group_files(const std::vector<file_description_t> &files, std::uintmax_t max_bag_size)
+void group_files(const std::vector<file_description_t> &files, std::uintmax_t max_bag_size)
 {
-    std::vector<std::vector<file_description_t>> bags;
-    std::vector<file_description_t> current_bag;
+    size_t current_bag = 1;
     std::uintmax_t current_bag_size = 0;
     size_t n_dones = 0;
+    file_description_t *file;
 
     while (n_dones < files.size())
     {
-        for (const auto &file : files)
+        for (size_t i = 0; i < files.size(); i++)
         {
-            if (file.size > max_bag_size)
+            file = ((file_description_t*)files.data())+i;
+
+            if (file->disk_index != 0)
             {
-                std::cout << "file " << file.path << " is too large" << std::endl;
+                // Already allocated
+                continue;
+            }
+
+            if (file->size > max_bag_size)
+            {
+                std::cout << "file " << file->path << " is too large" << std::endl;
                 exit(1);
             }
 
-            if (current_bag_size + file.size <= max_bag_size)
+            if (current_bag_size + file->size <= max_bag_size)
             {
-                current_bag.push_back(file);
-                current_bag_size += file.size;
+                file->disk_index = current_bag;
+                current_bag_size += file->size;
                 n_dones++;
             }
         }
 
-        bags.push_back(current_bag);
-        current_bag.clear();
+        current_bag++;
         current_bag_size = 0;
     }
-
-    return bags;
 }
 
 // Function to copy files to subfolders bag1, bag2, bag3, etc.
-void copy_files_to_subfolders(const std::vector<std::vector<file_description_t>> &bags, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
+void copy_files_to_subfolders(const std::vector<file_description_t> &files, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
 {
-    for (size_t i = 0; i < bags.size(); ++i)
+    for (const file_description_t &file : files)
     {
-        fs::path subfolder = output_directory / (folder_prefix + std::to_string(i + 1));
-        for (const auto &file : bags[i])
-        {
-            auto dst = subfolder / fs::relative(file.path, rootFolder);
-            std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
-            fs::create_directories(dst.parent_path());
-            fs::copy(file.path, dst);
-        }
+        fs::path subfolder = output_directory / (folder_prefix + std::to_string(file.disk_index + 1));
+        auto dst = subfolder / fs::relative(file.path, rootFolder);
+        std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
+        fs::create_directories(dst.parent_path());
+        fs::copy(file.path, dst);
+    }
+}
+
+void print_disks(std::vector<file_description_t> &files){
+    size_t n_disks=0;
+    for (auto &file  : files){
+        n_disks = file.disk_index > n_disks ? file.disk_index : n_disks;
+    }
+
+    std::vector<size_t> disk_sizes(n_disks,0);
+    std::vector<size_t> disk_n_elements(n_disks,0);
+
+    for (auto &file: files){
+        disk_sizes[file.disk_index] += file.size;
+        disk_n_elements[file.disk_index] ++;
+    }
+
+    for (size_t disk_index = 0; disk_index < n_disks; disk_index++){
+        std::cout << "disk " << disk_index << ": " << disk_n_elements[disk_index] << " elements and " << disk_sizes[disk_index]<< "bytes"<<std::endl;
     }
 }
 
@@ -175,7 +198,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    std::vector<file_description_t> file_sizes = file_size(files,rootFolder);
+    std::vector<file_description_t> file_sizes = file_size(files, rootFolder);
 
     if (file_sizes.empty())
     {
@@ -183,15 +206,11 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    std::vector<std::vector<file_description_t>> bags = group_files(file_sizes, args.size);
+    group_files(file_sizes, args.size);
 
-    if (bags.empty())
-    {
-        std::cout << "No files to copy.\n";
-        return 0;
-    }
+    print_disks(file_sizes);
 
-    copy_files_to_subfolders(bags, args.output, args.folderPrefix, rootFolder);
+    copy_files_to_subfolders(file_sizes, args.output, args.folderPrefix, rootFolder);
     std::cout << "Files copied to subfolders successfully.\n";
 
     return 0;
