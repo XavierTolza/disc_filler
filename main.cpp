@@ -4,6 +4,7 @@
 #include <fstream>
 #include <algorithm>
 #include "arguments.hpp"
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -104,7 +105,7 @@ void group_files(const std::vector<file_description_t> &files, std::uintmax_t ma
     {
         for (size_t i = 0; i < files.size(); i++)
         {
-            file = ((file_description_t*)files.data())+i;
+            file = ((file_description_t *)files.data()) + i;
 
             if (file->disk_index != 0)
             {
@@ -131,35 +132,80 @@ void group_files(const std::vector<file_description_t> &files, std::uintmax_t ma
     }
 }
 
-// Function to copy files to subfolders bag1, bag2, bag3, etc.
-void copy_files_to_subfolders(const std::vector<file_description_t> &files, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
+typedef struct
 {
-    for (const file_description_t &file : files)
-    {
-        fs::path subfolder = output_directory / (folder_prefix + std::to_string(file.disk_index + 1));
-        auto dst = subfolder / fs::relative(file.path, rootFolder);
-        std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
-        fs::create_directories(dst.parent_path());
-        fs::copy(file.path, dst);
-    }
-}
+    size_t n_elements;
+    size_t total_size;
+} disk_stat_t;
 
-void print_disks(std::vector<file_description_t> &files){
-    size_t n_disks=0;
-    for (auto &file  : files){
+std::vector<disk_stat_t> disk_stats(const std::vector<file_description_t> &files)
+{
+    size_t n_disks = 0;
+    for (auto &file : files)
+    {
         n_disks = file.disk_index > n_disks ? file.disk_index : n_disks;
     }
 
-    std::vector<size_t> disk_sizes(n_disks,0);
-    std::vector<size_t> disk_n_elements(n_disks,0);
+    std::vector<disk_stat_t> res(n_disks);
 
-    for (auto &file: files){
-        disk_sizes[file.disk_index] += file.size;
-        disk_n_elements[file.disk_index] ++;
+    // init
+    for (auto &i : res)
+    {
+        i.total_size = 0;
+        i.n_elements = 0;
     }
 
-    for (size_t disk_index = 0; disk_index < n_disks; disk_index++){
-        std::cout << "disk " << disk_index << ": " << disk_n_elements[disk_index] << " elements and " << disk_sizes[disk_index]<< "bytes"<<std::endl;
+    for (auto &file : files)
+    {
+        res[file.disk_index].total_size += file.size;
+        res[file.disk_index].n_elements++;
+    }
+    return res;
+}
+
+// Function to copy files to subfolders bag1, bag2, bag3, etc.
+void copy_files_to_subfolders(const std::vector<file_description_t> &files, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
+{
+    auto disks = disk_stats(files);
+    std::vector<size_t> copied = std::vector<size_t>(disks.size(), 0);
+    std::vector<uint8_t> percents = std::vector<uint8_t>(disks.size(), 0);
+
+    for (const file_description_t &file : files)
+    {
+        auto disk_index = file.disk_index;
+
+        fs::path subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
+        auto dst = subfolder / fs::relative(file.path, rootFolder);
+        // std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
+        fs::create_directories(dst.parent_path());
+        fs::copy(file.path, dst);
+
+        copied[disk_index] += file.size;
+        uint8_t new_percent = (copied[disk_index] * 100) / disks[disk_index].total_size;
+
+        if (new_percent != percents[disk_index])
+        {
+            percents[disk_index] = new_percent;
+            // update display
+            std::cout << "\r";
+            for (size_t i = 1; i < disks.size(); i++)
+            {
+                std::cout << "disk" << i << ": " << (int)(percents[i]) << "%,  ";
+            }
+            std::cout << std::flush;
+        }
+    }
+}
+
+void print_disks(std::vector<file_description_t> &files)
+{
+    auto disks = disk_stats(files);
+    size_t n_disks = disks.size();
+
+    for (size_t disk_index = 0; disk_index < n_disks; disk_index++)
+    {
+        auto disk = disks[disk_index];
+        std::cout << "disk " << disk_index << ": " << disk.n_elements << " elements and " << disk.total_size << "bytes" << std::endl;
     }
 }
 
@@ -209,6 +255,8 @@ int main(int argc, char *argv[])
     group_files(file_sizes, args.size);
 
     print_disks(file_sizes);
+
+    std::cout << std::endl;
 
     copy_files_to_subfolders(file_sizes, args.output, args.folderPrefix, rootFolder);
     std::cout << "Files copied to subfolders successfully.\n";
