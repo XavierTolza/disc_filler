@@ -216,16 +216,16 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
     std::vector<size_t> copied = std::vector<size_t>(disks.size(), 0);
     std::vector<uint8_t> percents = std::vector<uint8_t>(disks.size(), 0);
     
-    fs::path to_create;
+    fs::path to_create,subfolder,dst,sub;
 
     for (const auto &[key, group] : groups)
     {
         auto disk_index = group.disk_index;
         for (auto &file : group.files){
-            fs::path subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
-            fs::path dst = subfolder / fs::relative(file.path, rootFolder);
+            subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
+            dst = subfolder / fs::relative(file.path, rootFolder);
             to_create = dst.parent_path();
-            fs::path sub;
+            sub="";
             for (auto &i: to_create){
                 sub /= i;
                 std::cout << sub << std::endl;
