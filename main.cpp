@@ -6,6 +6,7 @@
 #include "arguments.hpp"
 #include <iomanip>
 #include <map>
+#include "directory.h"
 
 namespace fs = std::filesystem;
 
@@ -209,6 +210,20 @@ std::vector<disk_stat_t> disk_stats(const std::map<std::string,file_group_t> &gr
     return res;
 }
 
+std::vector<fs::path> parent_paths(const fs::path &input){
+    std::vector<fs::path> res;
+
+    for (const auto &i:input){
+        if (res.size()==0){
+            res.push_back(i);
+        }
+        else{
+            res.push_back(res.back()/i);
+        }
+    }
+    return res;
+}
+
 // Function to copy files to subfolders bag1, bag2, bag3, etc.
 void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
 {
@@ -216,39 +231,15 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
     std::vector<size_t> copied = std::vector<size_t>(disks.size(), 0);
     std::vector<uint8_t> percents = std::vector<uint8_t>(disks.size(), 0);
     
-    fs::path to_create,subfolder,dst,sub;
+    fs::path to_create,subfolder,dst;
 
     for (const auto &[key, group] : groups)
     {
         auto disk_index = group.disk_index;
-        for (auto &file : group.files){
-            subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
-            dst = subfolder / fs::relative(file.path, rootFolder);
-            to_create = dst.parent_path();
-            sub="";
-            for (auto &i: to_create){
-                sub /= i;
-                std::cout << sub << std::endl;
-                fs::create_directory(sub.string());
-            }
-            std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
-            fs::copy(file.path, dst);
-
-            copied[disk_index] += file.size;
-            uint8_t new_percent = (copied[disk_index] * 100) / disks[disk_index].total_size;
-
-            if (new_percent != percents[disk_index])
-            {
-                percents[disk_index] = new_percent;
-                // update display
-                std::cout << "\r";
-                for (size_t i = 1; i < disks.size(); i++)
-                {
-                    std::cout << "disk" << i << ": " << (int)(percents[i]) << "%,  ";
-                }
-                std::cout << std::flush;
-            }
-        }
+        dst = output_directory / (folder_prefix + std::to_string(disk_index))/key;
+        std::cout << (rootFolder/key).string() << " -> " << dst.string() << std::endl;
+        // fs::create_directories(dst.parent_path());
+        copy_folder((rootFolder/key).c_str(), dst.c_str());
     }
 }
 

@@ -22,7 +22,7 @@ Arguments parseCommandLine(int argc, char *argv[])
     args.displayHelp = false;
     args.max_depth = 0;
 
-    const char *shortOpts = "i:s:p:o:h:d:";
+    const char *shortOpts = "i:s:p:o:hd:";
     const option longOpts[] = {
         {"input", required_argument, nullptr, 'i'},
         {"size", required_argument, nullptr, 's'},
@@ -50,8 +50,8 @@ Arguments parseCommandLine(int argc, char *argv[])
             args.output = optarg;
             break;
         case 'h':
-            args.displayHelp = true;
-            break;
+            displayHelp();
+            exit(0);
         case 'd':
             args.max_depth = std::stoll(optarg);
             break;
