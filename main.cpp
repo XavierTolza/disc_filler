@@ -5,6 +5,7 @@
 #include <algorithm>
 #include "arguments.hpp"
 #include <iomanip>
+#include <map>
 
 namespace fs = std::filesystem;
 
@@ -12,7 +13,13 @@ struct file_description_t
 {
     std::uintmax_t size;
     fs::path path;
+};
+
+struct file_group_t
+{
+    std::vector<file_description_t> files;
     size_t disk_index;
+    size_t group_size;
 };
 
 std::vector<fs::path> read_stdin(std::istream &input)
@@ -82,7 +89,7 @@ std::vector<file_description_t> file_size(std::vector<fs::path> &input, fs::path
         if (fs::exists(i) && fs::is_regular_file(i))
         {
             std::uintmax_t size = fs::file_size(i);
-            files.push_back({size, i, 0});
+            files.push_back({size, i});
         }
         else
         {
@@ -93,8 +100,49 @@ std::vector<file_description_t> file_size(std::vector<fs::path> &input, fs::path
     return files;
 }
 
+std::map<std::string, file_group_t> group_files(const std::vector<file_description_t> &files)
+{
+    std::map<std::string, file_group_t> res;
+    for (auto &file : files)
+    {
+        file_group_t new_group;
+        new_group.files.push_back(file);
+        new_group.group_size = file.size;
+        res.emplace(file.path,new_group);
+    }
+    return res;
+}
+
+std::map<std::string, file_group_t> group_files(const std::vector<file_description_t> &files, fs::path root_folder, uint32_t depth)
+{
+    if (depth == 0)
+    {
+        return group_files(files);
+    }
+    std::map<std::string, file_group_t> res_map;
+    for (auto &file : files)
+    {
+        uint32_t i = 0;
+        fs::path group_path;
+        
+        for (auto &sub : fs::relative(file.path, root_folder))
+        {
+            group_path = group_path / sub;
+            if (++i >= depth)
+            {
+                break;
+            }
+        }
+        res_map.try_emplace(group_path.string(),file_group_t());
+        file_group_t &container = res_map.at(group_path.string());
+        container.files.push_back(file);
+        container.group_size+=file.size;
+    }
+    return res_map;
+}
+
 // Function to group files into bags based on the given maximum bag size
-void group_files(const std::vector<file_description_t> &files, std::uintmax_t max_bag_size)
+void assign_disks(const std::map<std::string,file_group_t> &groups, std::uintmax_t max_bag_size)
 {
     size_t current_bag = 1;
     std::uintmax_t current_bag_size = 0;
@@ -107,7 +155,7 @@ void group_files(const std::vector<file_description_t> &files, std::uintmax_t ma
         {
             file = ((file_description_t *)files.data()) + i;
 
-            if (file->disk_index != 0)
+            if (0 != 0)
             {
                 // Already allocated
                 continue;
@@ -121,7 +169,7 @@ void group_files(const std::vector<file_description_t> &files, std::uintmax_t ma
 
             if (current_bag_size + file->size <= max_bag_size)
             {
-                file->disk_index = current_bag;
+                // file->disk_index = current_bag;
                 current_bag_size += file->size;
                 n_dones++;
             }
@@ -143,7 +191,7 @@ std::vector<disk_stat_t> disk_stats(const std::vector<file_description_t> &files
     size_t n_disks = 0;
     for (auto &file : files)
     {
-        n_disks = file.disk_index > n_disks ? file.disk_index : n_disks;
+        // n_disks = file.disk_index > n_disks ? file.disk_index : n_disks;
     }
 
     std::vector<disk_stat_t> res(n_disks);
@@ -157,8 +205,8 @@ std::vector<disk_stat_t> disk_stats(const std::vector<file_description_t> &files
 
     for (auto &file : files)
     {
-        res[file.disk_index].total_size += file.size;
-        res[file.disk_index].n_elements++;
+        // res[file.disk_index].total_size += file.size;
+        // res[file.disk_index].n_elements++;
     }
     return res;
 }
@@ -172,7 +220,7 @@ void copy_files_to_subfolders(const std::vector<file_description_t> &files, cons
 
     for (const file_description_t &file : files)
     {
-        auto disk_index = file.disk_index;
+        auto disk_index = 0; // file.disk_index;
 
         fs::path subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
         auto dst = subfolder / fs::relative(file.path, rootFolder);
@@ -194,6 +242,12 @@ void copy_files_to_subfolders(const std::vector<file_description_t> &files, cons
             }
             std::cout << std::flush;
         }
+    }
+}
+
+void print_groups(std::map<std::string,file_group_t> &groups){
+    for (const auto [key,group]:groups){
+        std::cout << key << " (" << group.files.size() << " elements " << group.group_size << " bytes)"<< std::endl; 
     }
 }
 
@@ -252,7 +306,10 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    group_files(file_sizes, args.size);
+    auto groups = group_files(file_sizes, rootFolder, args.max_depth);
+    print_groups(groups);
+
+    assign_disks(groups, args.size);
 
     print_disks(file_sizes);
 
