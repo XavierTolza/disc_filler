@@ -142,35 +142,33 @@ std::map<std::string, file_group_t> group_files(const std::vector<file_descripti
 }
 
 // Function to group files into bags based on the given maximum bag size
-void assign_disks(const std::map<std::string,file_group_t> &groups, std::uintmax_t max_bag_size)
+void assign_disks(std::map<std::string,file_group_t> &groups, std::uintmax_t max_bag_size)
 {
     size_t current_bag = 1;
     std::uintmax_t current_bag_size = 0;
     size_t n_dones = 0;
     file_description_t *file;
 
-    while (n_dones < files.size())
+    while (n_dones < groups.size())
     {
-        for (size_t i = 0; i < files.size(); i++)
+        for (auto & [key, group]: groups)
         {
-            file = ((file_description_t *)files.data()) + i;
-
-            if (0 != 0)
+            if (group.disk_index != 0)
             {
                 // Already allocated
                 continue;
             }
 
-            if (file->size > max_bag_size)
+            if (group.group_size > max_bag_size)
             {
-                std::cout << "file " << file->path << " is too large" << std::endl;
+                std::cout << "group " << key << " is too large" << std::endl;
                 exit(1);
             }
 
-            if (current_bag_size + file->size <= max_bag_size)
+            if (current_bag_size + group.group_size <= max_bag_size)
             {
-                // file->disk_index = current_bag;
-                current_bag_size += file->size;
+                group.disk_index = current_bag;
+                current_bag_size += group.group_size;
                 n_dones++;
             }
         }
@@ -186,12 +184,12 @@ typedef struct
     size_t total_size;
 } disk_stat_t;
 
-std::vector<disk_stat_t> disk_stats(const std::vector<file_description_t> &files)
+std::vector<disk_stat_t> disk_stats(const std::map<std::string,file_group_t> &groups)
 {
     size_t n_disks = 0;
-    for (auto &file : files)
+    for (auto &[key, group] : groups)
     {
-        // n_disks = file.disk_index > n_disks ? file.disk_index : n_disks;
+        n_disks = group.disk_index > n_disks ? group.disk_index : n_disks;
     }
 
     std::vector<disk_stat_t> res(n_disks);
@@ -203,44 +201,46 @@ std::vector<disk_stat_t> disk_stats(const std::vector<file_description_t> &files
         i.n_elements = 0;
     }
 
-    for (auto &file : files)
+    for (auto &[key, group] : groups)
     {
-        // res[file.disk_index].total_size += file.size;
-        // res[file.disk_index].n_elements++;
+        res[group.disk_index].total_size += group.group_size;
+        res[group.disk_index].n_elements += group.files.size();
     }
     return res;
 }
 
 // Function to copy files to subfolders bag1, bag2, bag3, etc.
-void copy_files_to_subfolders(const std::vector<file_description_t> &files, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
+void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups, const fs::path &output_directory, const std::string &folder_prefix, fs::path rootFolder)
 {
-    auto disks = disk_stats(files);
+    auto disks = disk_stats(groups);
     std::vector<size_t> copied = std::vector<size_t>(disks.size(), 0);
     std::vector<uint8_t> percents = std::vector<uint8_t>(disks.size(), 0);
 
-    for (const file_description_t &file : files)
+    for (const auto &[key, group] : groups)
     {
-        auto disk_index = 0; // file.disk_index;
+        auto disk_index = group.disk_index;
+        for (auto &file : group.files){
+            fs::path subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
+            fs::path dst = subfolder / fs::relative(file.path, rootFolder);
+            // std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
+            auto dirname = dst.parent_path();
+            fs::create_directories(dirname);
+            fs::copy(file.path, dst);
 
-        fs::path subfolder = output_directory / (folder_prefix + std::to_string(disk_index));
-        auto dst = subfolder / fs::relative(file.path, rootFolder);
-        // std::cout << (file.path).string() << " -> " << dst.string() << std::endl;
-        fs::create_directories(dst.parent_path());
-        fs::copy(file.path, dst);
+            copied[disk_index] += file.size;
+            uint8_t new_percent = (copied[disk_index] * 100) / disks[disk_index].total_size;
 
-        copied[disk_index] += file.size;
-        uint8_t new_percent = (copied[disk_index] * 100) / disks[disk_index].total_size;
-
-        if (new_percent != percents[disk_index])
-        {
-            percents[disk_index] = new_percent;
-            // update display
-            std::cout << "\r";
-            for (size_t i = 1; i < disks.size(); i++)
+            if (new_percent != percents[disk_index])
             {
-                std::cout << "disk" << i << ": " << (int)(percents[i]) << "%,  ";
+                percents[disk_index] = new_percent;
+                // update display
+                std::cout << "\r";
+                for (size_t i = 1; i < disks.size(); i++)
+                {
+                    std::cout << "disk" << i << ": " << (int)(percents[i]) << "%,  ";
+                }
+                std::cout << std::flush;
             }
-            std::cout << std::flush;
         }
     }
 }
@@ -251,9 +251,9 @@ void print_groups(std::map<std::string,file_group_t> &groups){
     }
 }
 
-void print_disks(std::vector<file_description_t> &files)
+void print_disks(std::map<std::string,file_group_t> &groups)
 {
-    auto disks = disk_stats(files);
+    auto disks = disk_stats(groups);
     size_t n_disks = disks.size();
 
     for (size_t disk_index = 0; disk_index < n_disks; disk_index++)
@@ -311,11 +311,11 @@ int main(int argc, char *argv[])
 
     assign_disks(groups, args.size);
 
-    print_disks(file_sizes);
+    print_disks(groups);
 
     std::cout << std::endl;
 
-    copy_files_to_subfolders(file_sizes, args.output, args.folderPrefix, rootFolder);
+    copy_files_to_subfolders(groups, args.output, args.folderPrefix, rootFolder);
     std::cout << "Files copied to subfolders successfully.\n";
 
     return 0;
