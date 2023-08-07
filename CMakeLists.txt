@@ -9,4 +9,5 @@ add_executable(disc_filler
     directory.cpp
 )
 
-target_link_libraries(disc_filler PRIVATE)
+# Define the installation directory for the executable (e.g., /usr/local/bin)
+install(TARGETS disc_filler DESTINATION bin)
