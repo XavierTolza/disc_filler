@@ -6,7 +6,9 @@
 #include "arguments.hpp"
 #include <iomanip>
 #include <map>
+#ifdef COPY_FILES_C
 #include "directory.h"
+#endif
 
 namespace fs = std::filesystem;
 
@@ -109,7 +111,7 @@ std::map<std::string, file_group_t> group_files(const std::vector<file_descripti
         file_group_t new_group;
         new_group.files.push_back(file);
         new_group.group_size = file.size;
-        res.emplace(file.path,new_group);
+        res.emplace(file.path, new_group);
     }
     return res;
 }
@@ -125,7 +127,7 @@ std::map<std::string, file_group_t> group_files(const std::vector<file_descripti
     {
         uint32_t i = 0;
         fs::path group_path;
-        
+
         for (auto &sub : fs::relative(file.path, root_folder))
         {
             group_path = group_path / sub;
@@ -134,16 +136,16 @@ std::map<std::string, file_group_t> group_files(const std::vector<file_descripti
                 break;
             }
         }
-        res_map.try_emplace(group_path.string(),file_group_t());
+        res_map.try_emplace(group_path.string(), file_group_t());
         file_group_t &container = res_map.at(group_path.string());
         container.files.push_back(file);
-        container.group_size+=file.size;
+        container.group_size += file.size;
     }
     return res_map;
 }
 
 // Function to group files into bags based on the given maximum bag size
-void assign_disks(std::map<std::string,file_group_t> &groups, std::uintmax_t max_bag_size)
+void assign_disks(std::map<std::string, file_group_t> &groups, std::uintmax_t max_bag_size, bool compact)
 {
     size_t current_bag = 1;
     std::uintmax_t current_bag_size = 0;
@@ -152,7 +154,7 @@ void assign_disks(std::map<std::string,file_group_t> &groups, std::uintmax_t max
 
     while (n_dones < groups.size())
     {
-        for (auto & [key, group]: groups)
+        for (auto &[key, group] : groups)
         {
             if (group.disk_index != 0)
             {
@@ -172,6 +174,11 @@ void assign_disks(std::map<std::string,file_group_t> &groups, std::uintmax_t max
                 current_bag_size += group.group_size;
                 n_dones++;
             }
+            else if (!compact)
+            {
+                break;
+            }
+            
         }
 
         current_bag++;
@@ -185,7 +192,7 @@ typedef struct
     size_t total_size;
 } disk_stat_t;
 
-std::vector<disk_stat_t> disk_stats(const std::map<std::string,file_group_t> &groups)
+std::vector<disk_stat_t> disk_stats(const std::map<std::string, file_group_t> &groups)
 {
     size_t n_disks = 0;
     for (auto &[key, group] : groups)
@@ -210,15 +217,19 @@ std::vector<disk_stat_t> disk_stats(const std::map<std::string,file_group_t> &gr
     return res;
 }
 
-std::vector<fs::path> parent_paths(const fs::path &input){
+std::vector<fs::path> parent_paths(const fs::path &input)
+{
     std::vector<fs::path> res;
 
-    for (const auto &i:input){
-        if (res.size()==0){
+    for (const auto &i : input)
+    {
+        if (res.size() == 0)
+        {
             res.push_back(i);
         }
-        else{
-            res.push_back(res.back()/i);
+        else
+        {
+            res.push_back(res.back() / i);
         }
     }
     return res;
@@ -230,91 +241,117 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
     auto disks = disk_stats(groups);
     std::vector<size_t> copied = std::vector<size_t>(disks.size(), 0);
     std::vector<uint8_t> percents = std::vector<uint8_t>(disks.size(), 0);
-    
-    fs::path to_create,subfolder,dst;
 
-    for (const auto &[key, group] : groups)
+    fs::path to_create, subfolder, dst;
+
+    for (uint16_t active_disk_index = 0; active_disk_index < disks.size(); active_disk_index++)
     {
-        auto disk_index = group.disk_index;
-        dst = output_directory / (folder_prefix + std::to_string(disk_index))/key;
-        std::cout << (rootFolder/key).string() << " -> " << dst.string() << std::endl;
-        // fs::create_directories(dst.parent_path());
-        copy_folder((rootFolder/key).c_str(), dst.c_str());
+        for (const auto &[key, group] : groups)
+        {
+            auto disk_index = group.disk_index;
+            if (disk_index == active_disk_index)
+            {
+                dst = output_directory / (folder_prefix + std::to_string(disk_index)) / key;
+                // std::cout << (rootFolder / key).string() << " -> " << dst.string() << std::endl;
+#ifdef COPY_FILE_C
+                copy_folder((rootFolder / key).c_str(), dst.c_str());
+#else
+                fs::create_directories(dst.parent_path());
+                fs::copy(rootFolder / key, dst, fs::copy_options::recursive | fs::copy_options::update_existing);
+
+                // Logging
+                copied[disk_index] += group.group_size;
+                uint8_t new_percent = (100 * copied[disk_index]) / disks[disk_index].total_size;
+                if (new_percent != percents[disk_index])
+                {
+                    // Refresh display
+                    percents[disk_index] = new_percent;
+
+                    std::cout << "\t\r" << std::flush;
+                    std::cout << "Disk " << disk_index << ": " << (int)(new_percent) << "%";
+                }
+            }
+
+#endif
+        }
+        std::cout << std::endl;
     }
 }
 
-void print_groups(std::map<std::string,file_group_t> &groups){
-    for (const auto [key,group]:groups){
-        std::cout << key << " (" << group.files.size() << " elements " << group.group_size << " bytes)"<< std::endl; 
-    }
-}
-
-void print_disks(std::map<std::string,file_group_t> &groups)
-{
-    auto disks = disk_stats(groups);
-    size_t n_disks = disks.size();
-
-    for (size_t disk_index = 0; disk_index < n_disks; disk_index++)
+    void print_groups(std::map<std::string, file_group_t> & groups)
     {
-        auto disk = disks[disk_index];
-        std::cout << "disk " << disk_index << ": " << disk.n_elements << " elements and " << disk.total_size << "bytes" << std::endl;
-    }
-}
-
-int main(int argc, char *argv[])
-{
-    Arguments args = parseCommandLine(argc, argv);
-
-    if (!fs::exists(args.output))
-    {
-        std::cerr << "Error: Output directory does not exist.\n";
-        return 1;
+        for (const auto [key, group] : groups)
+        {
+            std::cout << key << " (" << group.files.size() << " elements " << group.group_size << " bytes, disk "<< group.disk_index <<")" << std::endl;
+        }
     }
 
-    std::vector<fs::path> files;
-    fs::path rootFolder = fs::current_path();
+    void print_disks(std::map<std::string, file_group_t> & groups)
+    {
+        auto disks = disk_stats(groups);
+        size_t n_disks = disks.size();
 
-    if (args.input == "-")
-    {
-        // Read from stdin
-        files = read_stdin(std::cin);
-    }
-    else if (fs::exists(args.input) && fs::is_regular_file(args.input))
-    {
-        files = read_file(args.input);
-        rootFolder = fs::path(args.input).parent_path();
-    }
-    else if (fs::exists(args.output) && !fs::is_regular_file(args.input))
-    {
-        files = find_files(args.input);
-        rootFolder = args.input;
-    }
-    else
-    {
-        std::cout << "invalid input file: " << args.input << std::endl;
-        displayHelp();
-        exit(1);
+        for (size_t disk_index = 0; disk_index < n_disks; disk_index++)
+        {
+            auto disk = disks[disk_index];
+            std::cout << "disk " << disk_index << ": " << disk.n_elements << " elements and " << disk.total_size << "bytes" << std::endl;
+        }
     }
 
-    std::vector<file_description_t> file_sizes = file_size(files, rootFolder);
-
-    if (file_sizes.empty())
+    int main(int argc, char *argv[])
     {
-        std::cout << "No valid files found.\n";
+        Arguments args = parseCommandLine(argc, argv);
+
+        if (!fs::exists(args.output))
+        {
+            std::cerr << "Error: Output directory does not exist.\n";
+            return 1;
+        }
+
+        std::vector<fs::path> files;
+        fs::path rootFolder = fs::current_path();
+
+        if (args.input == "-")
+        {
+            // Read from stdin
+            files = read_stdin(std::cin);
+        }
+        else if (fs::exists(args.input) && fs::is_regular_file(args.input))
+        {
+            files = read_file(args.input);
+            rootFolder = fs::path(args.input).parent_path();
+        }
+        else if (fs::exists(args.output) && !fs::is_regular_file(args.input))
+        {
+            files = find_files(args.input);
+            rootFolder = args.input;
+        }
+        else
+        {
+            std::cout << "invalid input file: " << args.input << std::endl;
+            displayHelp();
+            exit(1);
+        }
+
+        std::vector<file_description_t> file_sizes = file_size(files, rootFolder);
+
+        if (file_sizes.empty())
+        {
+            std::cout << "No valid files found.\n";
+            return 0;
+        }
+
+        auto groups = group_files(file_sizes, rootFolder, args.max_depth);
+
+        assign_disks(groups, args.size,args.compact);
+
+        print_groups(groups);
+        print_disks(groups);
+
+        std::cout << std::endl;
+
+        copy_files_to_subfolders(groups, args.output, args.folderPrefix, rootFolder);
+        std::cout << "Files copied to subfolders successfully.\n";
+
         return 0;
     }
-
-    auto groups = group_files(file_sizes, rootFolder, args.max_depth);
-    print_groups(groups);
-
-    assign_disks(groups, args.size);
-
-    print_disks(groups);
-
-    std::cout << std::endl;
-
-    copy_files_to_subfolders(groups, args.output, args.folderPrefix, rootFolder);
-    std::cout << "Files copied to subfolders successfully.\n";
-
-    return 0;
-}
