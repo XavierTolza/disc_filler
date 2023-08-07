@@ -1,74 +1,74 @@
-# Disc Filler
+# Project Name: disc_filler
 
-Disc Filler is a C++ program designed to help you group and organize files that you want to archive onto DVDs or Blu-ray discs. The program takes a list of files as input and groups them into folders (bags) of a user-defined maximal size. The goal is to ensure that each folder's total size does not exceed the capacity of the target disc, making it easier to burn the files onto multiple discs for archiving purposes.
-
-## Table of Contents
-- [Disc Filler](#disc-filler)
-  - [Table of Contents](#table-of-contents)
-  - [Introduction](#introduction)
-  - [Features](#features)
-  - [Requirements](#requirements)
-  - [Usage](#usage)
-  - [How It Works](#how-it-works)
-  - [Building](#building)
-  - [Contributing](#contributing)
-  - [License](#license)
-
-## Introduction
-
-Archiving large amounts of data onto DVDs or Blu-ray discs can be a cumbersome task. Disc Filler simplifies this process by automatically organizing files into folders (bags) that fit the disc's capacity. This not only makes the data transfer more efficient but also ensures you utilize the disc space optimally.
+The `disc_filler` project is a C++ program designed to group files for archiving on DVD/Blu-ray discs or any other storage media into folders of a maximum size. It offers a command-line interface that allows users to specify the input files, the size limit for each folder, and other configuration options. The program intelligently groups the files based on their size and ensures that each folder does not exceed the specified size limit.
 
 ## Features
 
-- Group files into folders (bags) based on user-defined maximal size.
-- Utilizes the C++ standard library's `<filesystem>` to handle file operations.
-- Supports both DVDs and Blu-ray discs.
-- Provides a straightforward command-line interface for easy interaction.
-- Copies files to subfolders with appropriate naming for easy identification.
-
-## Requirements
-
-- C++ compiler with C++17 support.
-- CMake (minimum version 3.15).
+- Groups files into folders based on a specified maximum folder size.
+- Supports reading file paths from stdin or from a file.
+- Recursively searches for files in the input directory and its subdirectories.
+- Allows limiting the depth of directory hierarchy when creating groups.
+- Provides options for compact grouping or not (when not compact, it might create fewer groups).
+- Displays information about the generated groups and their sizes before archiving.
+- Copies the files to subfolders with a given prefix and a numbered index (e.g., bag1, bag2, ...).
+- Supports copying files using standard C++ filesystem library or using a custom `copy_folder` function (controlled by preprocessor macros).
+- Provides a help message to guide users in using the command-line arguments.
 
 ## Usage
 
-1. Clone the repository to your local machine or download the source code as a ZIP file and extract it.
-2. Make sure you have the required dependencies (C++ compiler, CMake) installed on your system.
-3. Compile the program using CMake and your C++ compiler (See [Building](#building)).
-4. Run the compiled executable "disc_filler."
-5. Follow the on-screen instructions:
-   - Enter the maximum bag size (the size that each folder can hold, measured in bytes).
-   - Input the list of files to be archived (one file path per line).
-   - The program will automatically group the files into bags based on the specified size and copy them to appropriately named subfolders.
+### Compilation
 
-## How It Works
+To compile the `disc_filler` project, use CMake with the following steps:
 
-1. The program takes the list of input files and their sizes and stores them in a vector of `file_description_t` structures, which contain the file size in bytes and the file path.
-2. It then groups the files into bags (subfolders) based on the user-defined maximal bag size. Each bag's size will not exceed the specified maximum.
-3. Files are iteratively added to each bag until the bag's size is close to exceeding the user-defined maximum. Once that happens, a new bag is created, and the process continues until all files are allocated to their respective bags.
-4. Finally, the program copies the files to subfolders ("bag1", "bag2", etc.) based on their groupings. These subfolders are ready to be burned onto DVDs or Blu-ray discs for archiving.
+1. Create a `CMakeLists.txt` file with the appropriate settings (as provided in the earlier conversation).
+2. Run the CMake command to generate the build files for your specific platform.
+3. Build the project using the generated build files (e.g., `make` on Unix-based systems or `msbuild` on Windows).
 
-## Building
+### Running the Program
 
-To build the Disc Filler program, follow these steps:
+The `disc_filler` program is a command-line tool that accepts various command-line arguments. Here is the general syntax:
 
-1. Create a "build" directory in the root of the project.
-2. Navigate to the "build" directory in your terminal or command prompt.
-3. Run CMake to configure the build:
-   ```bash
-   cmake ..
-   ```
-4. Build the executable:
-   ```bash
-   cmake --build .
-   ```
-5. The compiled executable named "disc_filler" will be available in the "build" directory.
+```
+disc_filler [OPTIONS]
+```
 
-## Contributing
+#### Command-line Options
 
-Contributions to Disc Filler are welcome! If you find any bugs, have feature requests, or want to improve the program, please feel free to submit an issue or a pull request on the GitHub repository.
+- `-i`, `--input`: Specifies the input file or directory from which the program reads the files to group. Use "-" to read file paths from stdin.
+- `-s`, `--size`: Sets the maximum size limit (in bytes) for each group folder.
+- `-p`, `--prefix`: Specifies the prefix to use for the group folder names. Each folder will be named with the prefix followed by a numeric index (e.g., bag1, bag2, ...).
+- `-o`, `--output`: Specifies the output directory where the grouped files will be copied.
+- `--max-depth`: Limits the depth of directory hierarchy when creating groups. Files in subdirectories beyond this depth will not be considered for grouping.
+- `--compact`: Uses compact grouping (fewer groups) when specified.
+- `-h`, `--help`: Displays the help message, explaining the usage and options.
+
+**Note**: If you use the `--compact` option, the program might create fewer groups, and the total size of each group might approach the specified maximum size more closely.
+
+### Example Usage
+
+```bash
+# Group files in "input_directory" into folders with a maximum size of 1GB in the "output_directory"
+$ ./disc_filler -i input_directory -s 1073741824 -o output_directory
+
+# Read file paths from "input_files.txt" and group them into folders with a maximum size of 700MB in "output_directory"
+$ ./disc_filler -i input_files.txt -s 734003200 -o output_directory
+
+# Read file paths from stdin and group them compactly into folders with a maximum size of 500MB in "output_directory"
+$ cat input_files.txt | ./disc_filler -i - -s 524288000 -o output_directory --compact
+```
+
+### Compilation Options
+
+The project offers a few preprocessor macros that control how the files are copied. By default, it uses the standard C++ filesystem library for copying files. However, if you want to use a custom `copy_folder` function (e.g., `copy_folder` provided in `directory.h`), you can define the macro `COPY_FILES_C` before compiling the program.
 
 ## License
 
-Disc Filler is released under the [MIT License](LICENSE). You are free to use, modify, and distribute the code as per the terms of the license. However, please note that the program comes with no warranty or guarantee, and the author shall not be held liable for any damages arising from its use. It is recommended to review the license file before using the software.
+This project is licensed under the [MIT License](LICENSE).
+
+## Contribution
+
+Contributions to the `disc_filler` project are welcome! If you find any issues, have suggestions for improvements, or want to add new features, please open a GitHub issue or submit a pull request.
+
+## Acknowledgments
+
+The `disc_filler` project was created by [Your Name] and was inspired by the need to efficiently archive files on optical media. It uses the standard C++ library for file operations and supports flexible configuration to suit various archiving scenarios. The project is built upon the C++ programming language, CMake build system, and the power of the filesystem library to efficiently handle file operations.
