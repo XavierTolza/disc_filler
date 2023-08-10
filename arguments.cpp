@@ -24,8 +24,9 @@ Arguments parseCommandLine(int argc, char *argv[])
     args.displayHelp = false;
     args.compact = false;
     args.max_depth = 0;
+    args.mock = false;
 
-    const char *shortOpts = "i:s:p:o:hd:c";
+    const char *shortOpts = "i:s:p:o:hd:cn";
     const option longOpts[] = {
         {"input", required_argument, nullptr, 'i'},
         {"size", required_argument, nullptr, 's'},
@@ -34,6 +35,7 @@ Arguments parseCommandLine(int argc, char *argv[])
         {"depth", required_argument, nullptr, 'd'},
         {"compact", no_argument, nullptr, 'c'},
         {"help", no_argument, nullptr, 'h'},
+        {"simulate", no_argument, nullptr, 'n'},
         {nullptr, no_argument, nullptr, 0}};
 
     int opt;
@@ -61,6 +63,9 @@ Arguments parseCommandLine(int argc, char *argv[])
             break;
         case 'c':
             args.compact = true;
+            break;
+        case 'n':
+            args.mock = true;
             break;
         default:
             std::cerr << "Invalid option. Use -h for help.\n";

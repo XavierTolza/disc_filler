@@ -147,16 +147,22 @@ std::map<std::string, file_group_t> group_files(const std::vector<file_descripti
 // Function to group files into bags based on the given maximum bag size
 void assign_disks(std::map<std::string, file_group_t> &groups, std::uintmax_t max_bag_size, bool compact)
 {
-    size_t current_bag = 1;
+    size_t current_bag = 0;
     std::uintmax_t current_bag_size = 0;
     size_t n_dones = 0;
     file_description_t *file;
+
+    // set all group indexes to zero
+    for (auto &[key, group] : groups)
+    {
+        group.disk_index = -1;
+    }
 
     while (n_dones < groups.size())
     {
         for (auto &[key, group] : groups)
         {
-            if (group.disk_index != 0)
+            if (group.disk_index !=-1)
             {
                 // Already allocated
                 continue;
@@ -178,12 +184,17 @@ void assign_disks(std::map<std::string, file_group_t> &groups, std::uintmax_t ma
             {
                 break;
             }
-            
+
+            // Print progression
+            float progression = ((float)n_dones / (float)groups.size()) * 100;
+            std::cout << "\r" << "Progression: " << std::fixed << std::setprecision(2) << progression << "%" << std::flush;
         }
+
 
         current_bag++;
         current_bag_size = 0;
     }
+    std::cout << std::endl;
 }
 
 typedef struct
@@ -194,11 +205,27 @@ typedef struct
 
 std::vector<disk_stat_t> disk_stats(const std::map<std::string, file_group_t> &groups)
 {
+
+    // find the min value of group.disk_index
+    size_t min_disk_index = std::numeric_limits<size_t>::max();
+    for (auto &[key, group] : groups)
+    {
+        if (group.disk_index != 0)
+        {
+            min_disk_index = std::min(min_disk_index, group.disk_index);
+        }
+    }
+
+    // find the max value of group.disk_index
     size_t n_disks = 0;
     for (auto &[key, group] : groups)
     {
-        n_disks = group.disk_index > n_disks ? group.disk_index : n_disks;
+        if (group.disk_index != 0)
+        {
+            n_disks = std::max(n_disks, group.disk_index);
+        }
     }
+    n_disks++;
 
     std::vector<disk_stat_t> res(n_disks);
 
@@ -244,20 +271,25 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
 
     fs::path to_create, subfolder, dst;
 
+    // current time in seconds
+
     for (uint16_t active_disk_index = 0; active_disk_index < disks.size(); active_disk_index++)
     {
+        auto start = std::chrono::system_clock::now();
+
         for (const auto &[key, group] : groups)
         {
             auto disk_index = group.disk_index;
             if (disk_index == active_disk_index)
             {
-                dst = output_directory / (folder_prefix + std::to_string(disk_index)) / key;
+                dst = output_directory / (folder_prefix + std::to_string(disk_index+1)) / fs::relative(key, rootFolder);
                 // std::cout << (rootFolder / key).string() << " -> " << dst.string() << std::endl;
 #ifdef COPY_FILE_C
                 copy_folder((rootFolder / key).c_str(), dst.c_str());
 #else
                 fs::create_directories(dst.parent_path());
-                fs::copy(rootFolder / key, dst, fs::copy_options::recursive | fs::copy_options::update_existing);
+                auto src = rootFolder / key;
+                fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::update_existing);
 
                 // Logging
                 copied[disk_index] += group.group_size;
@@ -267,34 +299,40 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
                     // Refresh display
                     percents[disk_index] = new_percent;
 
+                    //Compute copy size in kb/sec
+                    auto end = std::chrono::system_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                    float speed = (float)copied[disk_index] / ((float)(elapsed.count()*1000));
+
                     std::cout << "\t\r" << std::flush;
-                    std::cout << "Disk " << disk_index << ": " << (int)(new_percent) << "%";
+                    std::cout << "Disk " << disk_index+1 << ": " << (int)(new_percent) << "% at " << speed << " kb/sec" << std::flush;
                 }
             }
 
 #endif
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
     }
-}
 
     void print_groups(std::map<std::string, file_group_t> & groups)
     {
         for (const auto [key, group] : groups)
         {
-            std::cout << key << " (" << group.files.size() << " elements " << group.group_size << " bytes, disk "<< group.disk_index <<")" << std::endl;
+            std::cout << key << " (" << group.files.size() << " elements " << group.group_size << " bytes, disk " << group.disk_index << ")" << std::endl;
         }
     }
 
     void print_disks(std::map<std::string, file_group_t> & groups)
     {
+        std::cout << "-----------" << std::endl << "Disks:" << std::endl;
         auto disks = disk_stats(groups);
         size_t n_disks = disks.size();
 
         for (size_t disk_index = 0; disk_index < n_disks; disk_index++)
         {
             auto disk = disks[disk_index];
-            std::cout << "disk " << disk_index << ": " << disk.n_elements << " elements and " << disk.total_size << "bytes" << std::endl;
+            std::cout << "disk " << disk_index+1 << ": " << disk.n_elements << " elements and " << disk.total_size << "bytes" << std::endl;
         }
     }
 
@@ -333,6 +371,8 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
             exit(1);
         }
 
+        std::cout << "Found " << files.size() << " files." << std::endl;
+
         std::vector<file_description_t> file_sizes = file_size(files, rootFolder);
 
         if (file_sizes.empty())
@@ -343,15 +383,22 @@ void copy_files_to_subfolders(const std::map<std::string, file_group_t> &groups,
 
         auto groups = group_files(file_sizes, rootFolder, args.max_depth);
 
-        assign_disks(groups, args.size,args.compact);
+        std::cout << "Found " << groups.size() << " groups." << std::endl;
+        std::cout << "Assigning disks..." << std::endl;
 
-        print_groups(groups);
+        assign_disks(groups, args.size, args.compact);
+
+        if (args.max_depth){
+            print_groups(groups);
+        }
         print_disks(groups);
 
         std::cout << std::endl;
 
-        copy_files_to_subfolders(groups, args.output, args.folderPrefix, rootFolder);
-        std::cout << "Files copied to subfolders successfully.\n";
+        if (!args.mock){
+            copy_files_to_subfolders(groups, args.output, args.folderPrefix, rootFolder);
+            std::cout << "Files copied to subfolders successfully.\n";
+        }
 
         return 0;
     }

@@ -13,6 +13,7 @@ struct Arguments
     bool displayHelp;
     uint32_t max_depth;
     bool compact;
+    bool mock;
 };
 
 void displayHelp();
